@@ -124,7 +124,7 @@ for epoch in range(1):
         preds=torch.sigmoid(output[1].detach().cpu())
 
         loss=output[0]
-        loss.backword()
+        loss.backward()
 
 
         #根据梯度来更新参数
