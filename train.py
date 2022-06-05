@@ -2,7 +2,6 @@ import numpy as np
 import pandas as pd
 import random
 import torch
-import matplotlib.pylab as plt
 import torchmetrics
 import torch.nn as nn
 from transformers import BertTokenizer, BertForSequenceClassification
@@ -49,10 +48,11 @@ trans_func_test = partial(load_data, tokenizer=tokenizer,isTest=True)
 train_df = pd.read_csv("dataset/train.txt", header=None, sep="\t")
 train_df.insert(loc=train_df.shape[1],column=None,value=None,allow_duplicates=True)
 train_df=train_df.values
-train_df=train_df[:1]
+label_num=np.unique(train_df[:,2])
 for index, text in enumerate(train_df):
     train_df[index] = trans_func(text)
-train_df,dev_df = train_test_split(train_df,test_size=0.3)
+# train_df,dev_df = train_test_split(train_df,test_size=0.3)
+dev_df =train_df
 
 test_df = pd.read_csv("dataset/test.txt", header=None, sep="\t")
 test_df.insert(loc=test_df.shape[1],column=None,value=None,allow_duplicates=True)
@@ -87,7 +87,7 @@ def create_batch(batch_data):
 
 
 trainloader=DataLoader(train_df,batch_size=32,collate_fn=create_batch,drop_last=False)
-dev_df=DataLoader(dev_df,batch_size=32,collate_fn=create_batch,drop_last=False)
+devloader=DataLoader(dev_df,batch_size=32,collate_fn=create_batch,drop_last=False)
 testloader=DataLoader(test_df,batch_size=32,collate_fn=create_batch,drop_last=False)
 
 
@@ -95,18 +95,20 @@ testloader=DataLoader(test_df,batch_size=32,collate_fn=create_batch,drop_last=Fa
 """
 进行训练
 """
-model=BertForSequenceClassification.from_pretrained(MODEL_PATH)
+model=BertForSequenceClassification.from_pretrained(MODEL_PATH,num_labels=len(label_num))
 #创建一些常规指标参数
-model_recall = torchmetrics.Recall(average='macro', num_classes=2)
-model_precision = torchmetrics.Precision(average='macro', num_classes=2)
-model_f1 = torchmetrics.F1Score(average="macro", num_classes=2)
+model_recall = torchmetrics.Recall(average='macro', num_classes=len(label_num))
+model_precision = torchmetrics.Precision(average='macro', num_classes=len(label_num))
+model_f1 = torchmetrics.F1Score(average="macro", num_classes=len(label_num))
 # 交叉熵损失函数
 criterion = nn.CrossEntropyLoss(ignore_index=-1)
 # 在Adam的基础上加入了权重衰减的优化器，可以解决L2正则化失效问题
 optimizer = torch.optim.Adam(lr=2e-5, params=model.parameters())
 #看是否用cpu或者gpu训练
 device= torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+print("-----------------------------------训练模式为%s------------------------------------"%device)
+#数据和model要采用相同的类型
+model=model.to(device)
 
 global_step=0
 total_loss = 0.0
@@ -186,7 +188,7 @@ for epoch in range(1):
     model_recall.reset()
 
     # 评估训练模型
-    evaluate(model, dev_df)
+    evaluate(model, devloader)
     torch.save(model.state_dict(),
                "./checkpoint/model_%d.pdparams"% (global_step))
 
