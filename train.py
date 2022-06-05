@@ -12,7 +12,7 @@ from torch.nn.utils.rnn import pad_sequence
 from functools import partial  # partial()函数可以用来固定某些参数值，并返回一个新的callable对象
 import pdb
 from transformers import BertForTokenClassification
-
+from sklearn.model_selection import train_test_split
 
 def load_data(text, tokenizer: BertTokenizer,isTest) -> dict:
     input_ids = []
@@ -52,12 +52,13 @@ train_df=train_df.values
 train_df=train_df[:1]
 for index, text in enumerate(train_df):
     train_df[index] = trans_func(text)
+train_df,dev_df = train_test_split(train_df,test_size=0.3)
 
-# test_df = pd.read_csv("dataset/test.txt", header=None, sep="\t")
-# test_df.insert(loc=test_df.shape[1],column=None,value=None,allow_duplicates=True)
-# test_df=test_df.values
-# for index, text in enumerate(test_df):
-#     test_df[index] = trans_func_test(text)
+test_df = pd.read_csv("dataset/test.txt", header=None, sep="\t")
+test_df.insert(loc=test_df.shape[1],column=None,value=None,allow_duplicates=True)
+test_df=test_df.values
+for index, text in enumerate(test_df):
+    test_df[index] = trans_func_test(text)
 
 
 """
@@ -86,7 +87,8 @@ def create_batch(batch_data):
 
 
 trainloader=DataLoader(train_df,batch_size=32,collate_fn=create_batch,drop_last=False)
-# testloader=DataLoader(test_df,batch_size=32,collate_fn=create_batch,drop_last=False)
+dev_df=DataLoader(dev_df,batch_size=32,collate_fn=create_batch,drop_last=False)
+testloader=DataLoader(test_df,batch_size=32,collate_fn=create_batch,drop_last=False)
 
 
 
@@ -109,6 +111,34 @@ device= torch.device("cuda" if torch.cuda.is_available() else "cpu")
 global_step=0
 total_loss = 0.0
 
+
+# 评估函数
+def evaluate(model, data_loader):
+    # 依次处理每批数据
+    for tokens_tensors,mask_tensors,label_tensor in data_loader:
+        # 单字属于不同标签的概率
+        output = model(input_ids=tokens_tensors.to(device), attention_mask=mask_tensors.to(device)
+                       , labels=label_tensor.to(device))
+        # 损失函数的平均值
+        loss = output[0]
+        # 按照概率最大原则，计算单字的标签编号
+        # argmax计算logits中最大元素值的索引，从0开始
+        preds=torch.argmax(output[1].detach().cpu(),dim=-1)
+
+        model_f1.update(preds.flatten(), label_tensor.flatten())
+        model_recall.update(preds.flatten(), label_tensor.flatten())
+        model_precision.update(preds.flatten(), label_tensor.flatten())
+    f1_score = model_f1.compute()
+    recall = model_recall.compute()
+    precision = model_precision.compute()
+
+    # 清空计算对象
+    model_precision.reset()
+    model_f1.reset()
+    model_recall.reset()
+    print("评估准确度: %.6f - 召回率: %.6f - f1得分: %.6f- 损失函数: %.6f" % (precision, recall, f1_score, total_loss))
+
+
 for epoch in range(1):
 
     #以此处理每批数据
@@ -121,7 +151,7 @@ for epoch in range(1):
         output=model(input_ids=tokens_tensors.to(device),attention_mask = mask_tensors.to(device)
                      ,labels =label_tensor.to(device))
 
-        preds=torch.sigmoid(output[1].detach().cpu())
+        preds=torch.argmax(output[1].detach().cpu(),dim=-1)
 
         loss=output[0]
         loss.backward()
@@ -145,4 +175,22 @@ for epoch in range(1):
             # print("训练准确度: %.6f, 召回率: %.6f, f1得分: %.6f" % (precision, recall,  f1_score))
 
 
+    # 计算一个epoch的accuray、recall、precision
+    total_recall = model_recall.compute()
+    total_precision = model_precision.compute()
+    total_f1 = model_precision.compute()
 
+    # 清空计算对象
+    model_precision.reset()
+    model_f1.reset()
+    model_recall.reset()
+
+    # 评估训练模型
+    evaluate(model, dev_df)
+    torch.save(model.state_dict(),
+               "./checkpoint/model_%d.pdparams"% (global_step))
+
+# 模型存储
+# !mkdir bert_result
+model.save_pretrained('./bert_result')
+tokenizer.save_pretrained('./bert_result')
