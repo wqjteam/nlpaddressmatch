@@ -48,6 +48,7 @@ trans_func_test = partial(load_data, tokenizer=tokenizer,isTest=True)
 train_df = pd.read_csv("dataset/train.txt", header=None, sep="\t")
 train_df.insert(loc=train_df.shape[1],column=None,value=None,allow_duplicates=True)
 train_df=train_df.values
+train_df=train_df[:100]
 label_num=np.unique(train_df[:,2])
 for index, text in enumerate(train_df):
     train_df[index] = trans_func(text)
@@ -57,6 +58,7 @@ dev_df =train_df
 test_df = pd.read_csv("dataset/test.txt", header=None, sep="\t")
 test_df.insert(loc=test_df.shape[1],column=None,value=None,allow_duplicates=True)
 test_df=test_df.values
+test_df=test_df[:100]
 for index, text in enumerate(test_df):
     test_df[index] = trans_func_test(text)
 
@@ -142,7 +144,7 @@ def evaluate(model, data_loader):
 
 
 for epoch in range(1):
-
+    print("-----------------------------------第%s轮训练------------------------------------"%epoch)
     #以此处理每批数据
     for step,(tokens_tensors,mask_tensors,label_tensor) in enumerate(trainloader):
 
